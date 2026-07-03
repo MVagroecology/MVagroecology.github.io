@@ -4,8 +4,228 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MVARC</title>
+<script>
+  (function () {
+    var oldBase = "/lucim/lpis-sustainability-compass";
+    var newBase = "https://euraf.github.io/LPIS-SC/compass";
+    var path = window.location.pathname || "";
+
+    if (path === oldBase || path.indexOf(oldBase + "/") === 0) {
+      var remainder = path.slice(oldBase.length);
+      var target = new URL(newBase);
+
+      if (remainder && remainder !== "/") {
+        target.pathname = target.pathname.replace(/\/$/, "") + remainder;
+      }
+
+      target.search = window.location.search || "";
+      target.hash = window.location.hash || "";
+      window.location.replace(target.toString());
+    }
+  })();
+</script>
+<style>
+  :root {
+    --bg: #f2f2ea;
+    --text: #1f2a1f;
+    --panel: #ffffff;
+    --accent: #2f6f4f;
+    --border: #d8dccf;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--text);
+    background: radial-gradient(circle at top right, #dce8d8 0%, var(--bg) 45%, #eceadf 100%);
+  }
+
+  main {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 2.5rem;
+  }
+
+  .logo {
+    display: block;
+    width: min(320px, 75vw);
+    height: auto;
+    margin: 0 0 0.75rem;
+  }
+
+  .intro {
+    margin: 0 0 2rem;
+    font-size: 1.05rem;
+  }
+
+  .repo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+  }
+
+  .repo-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    box-shadow: 0 8px 24px rgba(31, 42, 31, 0.08);
+  }
+
+  .repo-card h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1.2rem;
+    color: var(--accent);
+  }
+
+  .repo-card p {
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .repo-card a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .repo-card a:hover,
+  .repo-card a:focus {
+    text-decoration: underline;
+  }
+
+  .repo-status {
+    margin: 0 0 1rem;
+    color: #4b5a4d;
+  }
+</style>
 </head>
 <body>
-  <h1>MVARC</h1>
+  <main>
+    <a href="https://mvarc.eu/" target="_blank"><img class="logo" src="mvarc_logo.png" alt="MVARC logo"></a>
+
+    <p class="intro">Curated GitHub repositories</p>
+    <p class="repo-status" id="repo-status">Loading repositories...</p>
+
+    <section class="repo-grid" id="repo-grid" aria-label="Public repositories"></section>
+  </main>
+
+  <script>
+    (function () {
+      var owner = "mvagroecology";
+      var curatedRepoIds = [];
+      var curatedRepoNames = [ "AF_FAIRness", "clipick", "pgtool-gui", "pgtool-api" ];
+      var repoGrid = document.getElementById("repo-grid");
+      var repoStatus = document.getElementById("repo-status");
+      var allReposCache = [];
+
+      function buildRepoUrl(type) {
+        return "https://api.github.com/" + type + "/" + owner + "/repos?per_page=100&sort=updated";
+      }
+
+      function renderRepos(repos) {
+        repoGrid.innerHTML = "";
+
+        repos.forEach(function (repo) {
+          var card = document.createElement("article");
+          card.className = "repo-card";
+
+          var title = document.createElement("h2");
+          var link = document.createElement("a");
+          link.href = repo.html_url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = repo.name;
+          title.appendChild(link);
+
+          var description = document.createElement("p");
+          description.textContent = repo.description || "No description provided.";
+
+          card.appendChild(title);
+          card.appendChild(description);
+          repoGrid.appendChild(card);
+        });
+      }
+
+      function getReposToDisplay(allRepos) {
+        var hasCuratedIds = Array.isArray(curatedRepoIds) && curatedRepoIds.length > 0;
+        var hasCuratedNames = Array.isArray(curatedRepoNames) && curatedRepoNames.length > 0;
+
+        if (!hasCuratedIds && !hasCuratedNames) {
+          return allRepos;
+        }
+
+        var byId = new Map();
+        var byName = new Map();
+
+        allRepos.forEach(function (repo) {
+          byId.set(repo.id, repo);
+          byName.set(repo.name.toLowerCase(), repo);
+        });
+
+        var picked = [];
+
+        curatedRepoIds.forEach(function (repoId) {
+          var repo = byId.get(repoId);
+          if (repo) {
+            picked.push(repo);
+          }
+        });
+
+        curatedRepoNames.forEach(function (repoName) {
+          var repo = byName.get(String(repoName).toLowerCase());
+          if (repo && picked.indexOf(repo) === -1) {
+            picked.push(repo);
+          }
+        });
+
+        return picked;
+      }
+
+      function fetchRepos() {
+        return fetch(buildRepoUrl("orgs"))
+          .then(function (response) {
+            if (response.ok) {
+              return response.json();
+            }
+
+            return fetch(buildRepoUrl("users")).then(function (fallbackResponse) {
+              if (!fallbackResponse.ok) {
+                throw new Error("Unable to load repositories.");
+              }
+              return fallbackResponse.json();
+            });
+          });
+      }
+
+      fetchRepos()
+        .then(function (repos) {
+          if (!Array.isArray(repos) || repos.length === 0) {
+            repoStatus.textContent = "No public repositories found.";
+            return;
+          }
+
+          allReposCache = repos;
+          var reposToDisplay = getReposToDisplay(allReposCache);
+
+          if (reposToDisplay.length === 0) {
+            repoStatus.textContent = "No curated repositories matched your list.";
+            return;
+          }
+
+          repoStatus.textContent = reposToDisplay.length === allReposCache.length
+            ? ""
+            : "Showing " + reposToDisplay.length + " curated repositories.";
+          renderRepos(reposToDisplay);
+        })
+        .catch(function () {
+          repoStatus.textContent = "Could not load repositories right now.";
+        });
+    })();
+  </script>
 </body>
 </html>
